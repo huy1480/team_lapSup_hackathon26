@@ -1,7 +1,4 @@
-# Joseph Gardner
-# ECE 3220
-# Makefile
-# No known Bugs.
+# Makefile for LS-HACK 2026
 
 CC = gcc
 CFLAGS = -Wall -g
