@@ -17,11 +17,12 @@ cd build
 
 touch .env
 echo "GEMINI_API_KEY='${gemini_api_key}'" > .env
-echo "ELEVENLABS_API_KEY='${elevenlabs_api_key}'" >> .env
 
 cmake ..
 cmake --build .
 cp -r ../assets .
+
+echo "ELEVENLABS_API_KEY='${elevenlabs_api_key}'" >> assets/.env
 
 mv ./assets/gemini_dialog.py .
 
