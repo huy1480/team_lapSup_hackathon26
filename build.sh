@@ -7,8 +7,7 @@ echo "Checking python dependencies"
 if [ -x "$(command -v pacman)" ]; then
 	sudo pacman -S python-dotenv python-google-api-core
 else
-	pip install python-dotenv genai
-
+	pip install python-dotenv google
 fi
 
 mkdir build
