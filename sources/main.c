@@ -313,7 +313,7 @@ int main(void)
     INIT_ITEM(8, "Tuning Fork");
 
     Camera2D camera = { 0 };
-    camera.zoom = 0.5f; 
+    camera.zoom = 1.0f; 
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
 
     while (!WindowShouldClose())
