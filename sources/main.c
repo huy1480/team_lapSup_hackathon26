@@ -8,6 +8,16 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+    #define POPEN _popen
+    #define PCLOSE _pclose
+    #define PYTHON_CMD "python"
+#else
+    #define POPEN popen
+    #define PCLOSE pclose
+    #define PYTHON_CMD "python3"
+#endif
+
 #define SCREEN_WIDTH (1024)
 #define SCREEN_HEIGHT (576)
 #define WINDOW_TITLE "Lego Western Town - AI NPCs!"
@@ -23,13 +33,14 @@ NPC* interactingNPC = NULL;
 void GenerateGeminiDialog(const char* npcName, const char* itemName, char* buffer, size_t bufferSize) {
     char command[512];
     
-    // Format the command to run Python. Note: Use "python3" if you are on Mac/Linux!
-    snprintf(command, sizeof(command), "python gemini_dialog.py \"%s\" \"%s\"", npcName, itemName);
+    // Format the command dynamically based on the operating system
+    snprintf(command, sizeof(command), "%s gemini_dialog.py \"%s\" \"%s\"", PYTHON_CMD, npcName, itemName);
 
-    // popen opens a pipe to the console command and lets us read the output
-    FILE *fp = popen(command, "r");
+    // Open the pipe using our cross-platform macro
+    FILE *fp = POPEN(command, "r");
     if (fp == NULL) {
         snprintf(buffer, bufferSize, "Error: Could not run Python script.");
+        printf("ERROR: Python script failed to execute.\n"); 
         return;
     }
 
@@ -38,11 +49,15 @@ void GenerateGeminiDialog(const char* npcName, const char* itemName, char* buffe
     while (fgets(line, sizeof(line), fp) != NULL) {
         strncat(buffer, line, bufferSize - strlen(buffer) - 1);
     }
+    
+    // Close the pipe using our cross-platform macro
+    PCLOSE(fp);
 
+    // Debug logs
     printf("\n--- GEMINI DIALOG GENERATED ---\n");
     printf("NPC: %s\n", npcName);
     printf("Text: %s\n", buffer);
-    printf("-------------------------------\n\n");   pclose(fp);
+    printf("-------------------------------\n\n");
 }
 
 // --- Text Wrapping Helper ---
@@ -129,7 +144,7 @@ int main(void)
     items[1] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lucky Horseshoe", true };
 
     Camera2D camera = { 0 };
-    camera.zoom = 3.0f; 
+    camera.zoom = 2.0f; 
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
 
     while (!WindowShouldClose())
