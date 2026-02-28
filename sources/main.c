@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "character.h"
 #include "npc.h" // Include our new NPCs!
+#include <stddef.h>
 
 #define SCREEN_WIDTH (1024)
 #define SCREEN_HEIGHT (576)
@@ -9,6 +10,41 @@
 // --- Global UI State ---
 bool isDialogOpen = false;
 const char* activeDialogText = "";
+
+static bool IsPointWalkableFromMask(const Image *collisionMask, Vector2 worldPos) {
+    if (collisionMask == NULL || collisionMask->data == NULL) return true;
+
+    if (worldPos.x < 0.0f || worldPos.y < 0.0f || worldPos.x >= SCREEN_WIDTH || worldPos.y >= SCREEN_HEIGHT) {
+        return false;
+    }
+
+    int maskX = (int)(worldPos.x * ((float)collisionMask->width / (float)SCREEN_WIDTH));
+    int maskY = (int)(worldPos.y * ((float)collisionMask->height / (float)SCREEN_HEIGHT));
+
+    if (maskX < 0 || maskY < 0 || maskX >= collisionMask->width || maskY >= collisionMask->height) {
+        return false;
+    }
+
+    Color pixel = GetImageColor(*collisionMask, maskX, maskY);
+    int brightness = (pixel.r + pixel.g + pixel.b) / 3;
+    return brightness >= 200;
+}
+
+static bool IsCharacterPositionWalkable(const Image *collisionMask, const Character *player, Vector2 position) {
+    float collisionRadius = 6.0f;
+    if (player->texture.id != 0) {
+        float minDim = (player->texture.width < player->texture.height) ? (float)player->texture.width : (float)player->texture.height;
+        collisionRadius = minDim * 0.25f;
+    }
+
+    if (collisionRadius < 2.0f) collisionRadius = 2.0f;
+
+    return IsPointWalkableFromMask(collisionMask, position) &&
+           IsPointWalkableFromMask(collisionMask, (Vector2){ position.x + collisionRadius, position.y }) &&
+           IsPointWalkableFromMask(collisionMask, (Vector2){ position.x - collisionRadius, position.y }) &&
+           IsPointWalkableFromMask(collisionMask, (Vector2){ position.x, position.y + collisionRadius }) &&
+           IsPointWalkableFromMask(collisionMask, (Vector2){ position.x, position.y - collisionRadius });
+}
 
 // The function you requested!
 void OpenNPCDialog(const char* npcName) {
@@ -22,6 +58,8 @@ int main(void)
     SetTargetFPS(60);
 
     Texture2D background = LoadTexture("assets/bg.png");
+    Image collisionMask = LoadImage("assets/collision.png");
+    bool hasCollisionMask = collisionMask.data != NULL;
 
     Character player;
     InitCharacter(&player, (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f }, "assets/character.png");
@@ -66,7 +104,9 @@ int main(void)
                 } 
                 else {
                     // Only move the player if we didn't click on an NPC
-                    player.targetPosition = mouseWorldPos;
+                    if (IsCharacterPositionWalkable(hasCollisionMask ? &collisionMask : NULL, &player, mouseWorldPos)) {
+                        player.targetPosition = mouseWorldPos;
+                    }
                 }
             }
         }
@@ -74,7 +114,13 @@ int main(void)
         // --- Update Logic ---
         // Don't update the player's movement if they are locked in a conversation
         if (!isDialogOpen) {
+            Vector2 previousPosition = player.position;
             UpdateCharacter(&player);
+
+            if (!IsCharacterPositionWalkable(hasCollisionMask ? &collisionMask : NULL, &player, player.position)) {
+                player.position = previousPosition;
+                player.targetPosition = previousPosition;
+            }
         }
 
         // --- Camera Logic ---
@@ -151,6 +197,9 @@ int main(void)
     UnloadNPC(&sheriff);
     UnloadNPC(&garry);
     UnloadCharacter(&player);
+    if (hasCollisionMask) {
+        UnloadImage(collisionMask);
+    }
     UnloadTexture(background); 
     CloseWindow();
 
