@@ -1,6 +1,9 @@
+// =============================================================================
+//  main.c  –  Merged: scene-switching + collision (ours) & 9 NPCs (theirs)
+// =============================================================================
 #include "raylib.h"
 #include "raymath.h"
-#include "scene_manager.h"
+#include "scene_manager.h"   // scene switching, currentScene, currentBackground
 #include "character.h"
 #include "npc.h"
 #include "item.h"
@@ -208,56 +211,52 @@ int main(void)
             if (isDialogOpen) {
                 Rectangle okBtn = { SCREEN_WIDTH / 2.0f - 50, SCREEN_HEIGHT / 2.0f + 60, 100, 40 };
                 if (CheckCollisionPointRec(mouseScreenPos, okBtn)) {
-                    isDialogOpen = false; 
+                    isDialogOpen = false;
                 }
-            } 
-	    // 2. If Dialog is closed, we check for World interactions
-	    else {
-		    NPC* clickedNPC = NULL;
-	    if (IsNPCClicked(&sheriff, mouseWorldPos))      clickedNPC = &sheriff;
-	    else if (IsNPCClicked(&garry,  mouseWorldPos)) clickedNPC = &garry;
-	    else if (IsNPCClicked(&dale,   mouseWorldPos)) clickedNPC = &dale;
-	    else if (IsNPCClicked(&susan,  mouseWorldPos)) clickedNPC = &susan;
-	    else if (IsNPCClicked(&kitty,  mouseWorldPos)) clickedNPC = &kitty;
-	    else if (IsNPCClicked(&buster, mouseWorldPos)) clickedNPC = &buster;
-	    else if (IsNPCClicked(&tommy,  mouseWorldPos)) clickedNPC = &tommy;
-	    else if (IsNPCClicked(&barry,  mouseWorldPos)) clickedNPC = &barry;
-	    else if (IsNPCClicked(&marley, mouseWorldPos)) clickedNPC = &marley;
-		    if (clickedNPC != NULL) {
-			    activeNPCName = clickedNPC->name;
-			    isDialogOpen = true;
+            } else {
+                // Check which NPC was clicked (all 9)
+                NPC* clickedNPC = NULL;
+                if      (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
+                else if (IsNPCClicked(&garry,   mouseWorldPos)) clickedNPC = &garry;
+                else if (IsNPCClicked(&dale,    mouseWorldPos)) clickedNPC = &dale;
+                else if (IsNPCClicked(&susan,   mouseWorldPos)) clickedNPC = &susan;
+                else if (IsNPCClicked(&kitty,   mouseWorldPos)) clickedNPC = &kitty;
+                else if (IsNPCClicked(&buster,  mouseWorldPos)) clickedNPC = &buster;
+                else if (IsNPCClicked(&tommy,   mouseWorldPos)) clickedNPC = &tommy;
+                else if (IsNPCClicked(&barry,   mouseWorldPos)) clickedNPC = &barry;
+                else if (IsNPCClicked(&marley,  mouseWorldPos)) clickedNPC = &marley;
 
-			    // Instant Response: Quest is already done
-			    if (clickedNPC->questCompleted) {
-				    snprintf(activeDialogText, sizeof(activeDialogText), "Much obliged for your help earlier, partner!");
-			    } 
-			    // Instant Response: Player has the item
-			    else if (player.heldItem != NULL && strcmp(player.heldItem, clickedNPC->questItem) == 0) {
-				    snprintf(activeDialogText, sizeof(activeDialogText), "Well I'll be! You found my %s. Thank ye kindly!", clickedNPC->questItem);
-				    clickedNPC->questCompleted = true;
-				    player.heldItem = NULL; // Consume the item
-			    } 
-			    // Delayed AI Response: Trigger the "Hmm..." loading state
-			    else {
-				    snprintf(activeDialogText, sizeof(activeDialogText), "Hmm...");
-				    isWaitingForAI = true;        // Flag that we need to call Gemini
-				    interactingNPC = clickedNPC;  // Remember who we are talking to
-			    }
-		    } 
-		    else {
-			    // Only move the player if we didn't click on an NPC
-                bool canMoveToTarget = true;
+                if (clickedNPC != NULL) {
+                    activeNPCName = clickedNPC->name;
+                    isDialogOpen  = true;
 
-                // Collision mask only applies in the main town
-                if (collisionMaskPixels != NULL && currentScene == SCENE_MAIN_TOWN) {
-                    canMoveToTarget = !IsBlockedByCollisionMask(mouseWorldPos, collisionMaskPixels, collisionMaskImage.width, collisionMaskImage.height);
+                    if (clickedNPC->questCompleted) {
+                        snprintf(activeDialogText, sizeof(activeDialogText),
+                                 "Much obliged for your help earlier, partner!");
+                    } else if (player.heldItem != NULL &&
+                               strcmp(player.heldItem, clickedNPC->questItem) == 0) {
+                        snprintf(activeDialogText, sizeof(activeDialogText),
+                                 "Well I'll be! You found my %s. Thank ye kindly!", clickedNPC->questItem);
+                        clickedNPC->questCompleted = true;
+                        player.heldItem = NULL;
+                    } else {
+                        snprintf(activeDialogText, sizeof(activeDialogText), "Hmm...");
+                        isWaitingForAI = true;
+                        interactingNPC = clickedNPC;
+                    }
+                } else {
+                    // Move player – collision only applies in the main town
+                    bool canMove = true;
+                    if (collisionMaskPixels != NULL && currentScene == SCENE_MAIN_TOWN) {
+                        canMove = !IsBlockedByCollisionMask(mouseWorldPos, collisionMaskPixels,
+                                                            collisionMaskImage.width,
+                                                            collisionMaskImage.height);
+                    }
+                    if (canMove) {
+                        player.targetPosition = mouseWorldPos;
+                    }
                 }
-
-                if (canMoveToTarget) {
-                    player.targetPosition = mouseWorldPos;
-                }
-		    }
-	    }
+            }
         }
 
         // --- Update Logic ---
@@ -378,14 +377,11 @@ int main(void)
 
         EndDrawing();
 
-	if (isWaitingForAI && interactingNPC != NULL) {
-            // The game will freeze on this line while Python runs
-            GenerateGeminiDialog(interactingNPC->name, interactingNPC->questItem, activeDialogText, sizeof(activeDialogText));
-            
-            // Format the new text to fit the box
-            WrapText(activeDialogText, 560, 20); 
-            
-            // Reset our loading flags
+        // AI call happens after drawing so the "Hmm..." frame renders first
+        if (isWaitingForAI && interactingNPC != NULL) {
+            GenerateGeminiDialog(interactingNPC->name, interactingNPC->questItem,
+                                 activeDialogText, sizeof(activeDialogText));
+            WrapText(activeDialogText, 560, 20);
             isWaitingForAI = false;
             interactingNPC = NULL;
         }
