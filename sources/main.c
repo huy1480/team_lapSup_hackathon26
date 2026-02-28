@@ -199,12 +199,17 @@ static void SpeakDialogWithElevenLabs(const char* npcName, const char* dialogTex
 
 static void OpenDialogForNPC(const char* npcName, const char* dialogText, bool readAloud) {
     activeNPCName = npcName;
-    snprintf(activeDialogText, sizeof(activeDialogText), "%s", dialogText);
+    
+    // Only copy if the pointers don't match!
+    if (activeDialogText != dialogText) {
+        snprintf(activeDialogText, sizeof(activeDialogText), "%s", dialogText);
+    }
+    
     WrapText(activeDialogText, 560, 20);
     isDialogOpen = true;
 
     if (readAloud) {
-        SpeakDialogWithElevenLabs(npcName, dialogText);
+        SpeakDialogWithElevenLabs(npcName, activeDialogText);
     }
 }
 
