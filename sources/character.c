@@ -1,11 +1,13 @@
 #include "character.h"
 #include "raymath.h" // Gives us Vector2Distance, Vector2Normalize, etc.
+#include <stddef.h>
 
 void InitCharacter(Character *player, Vector2 startPos, const char* texturePath) {
     player->position = startPos;
     player->targetPosition = startPos;
     player->texture = LoadTexture(texturePath);
     player->speed = 150.0f; // Pixels per second
+    player->heldItem = NULL;
 }
 
 void UpdateCharacter(Character *player) {
