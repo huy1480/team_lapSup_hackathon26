@@ -8,8 +8,8 @@ SceneType currentScene = SCENE_MAIN_TOWN;
 Texture2D currentBackground = { 0 };
 
 // Cooldown: seconds to ignore teleport zones after a scene switch
-static float teleportCooldown = 0.0f;
-#define TELEPORT_COOLDOWN_SECS 1.2f
+static float teleportCooldown = 2.0f;
+#define TELEPORT_COOLDOWN_SECS 2.2f
 
 // -------------------------------------------------------------------------
 //  TELEPORT ZONES – MAIN TOWN
