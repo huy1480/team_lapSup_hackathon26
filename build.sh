@@ -22,3 +22,5 @@ cmake --build .
 cp -r ../assets .
 
 mv ./assets/gemini_dialog.py .
+
+

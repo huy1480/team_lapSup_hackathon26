@@ -13,6 +13,8 @@ typedef struct Character {
     float stepTimer;
     float stepInterval;
     const char* heldItem;
+    Texture2D leftStepTexture;  // Texture for left step
+    Texture2D rightStepTexture; // Texture for right step
 } Character;
 
 // Function declarations

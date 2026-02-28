@@ -1,6 +1,7 @@
 #include "character.h"
 #include "raymath.h" // Gives us Vector2Distance, Vector2Normalize, etc.
 #include <stddef.h>
+#include <stdio.h>
 
 void InitCharacter(Character *player, Vector2 startPos, const char* texturePath) {
     player->position = startPos;
@@ -12,6 +13,16 @@ void InitCharacter(Character *player, Vector2 startPos, const char* texturePath)
     player->stepTimer = 0.0f;
     player->stepInterval = 0.15f;
     player->heldItem = NULL;
+
+    player->leftStepTexture = LoadTexture("assets/left_step.png"); // Replace with actual path
+    if (player->leftStepTexture.id == 0) {
+        printf("ERROR: Failed to load left step texture.\n");
+    }
+
+    player->rightStepTexture = LoadTexture("assets/right_step.png"); // Replace with actual path
+    if (player->rightStepTexture.id == 0) {
+        printf("ERROR: Failed to load right step texture.\n");
+    }
 }
 
 void UpdateCharacter(Character *player) {
@@ -36,7 +47,7 @@ void UpdateCharacter(Character *player) {
         player->stepTimer += GetFrameTime();
         if (player->stepTimer >= player->stepInterval) {
             player->stepTimer = 0.0f;
-            player->stepToggle = !player->stepToggle;
+            player->stepToggle = !player->stepToggle; // Toggle between left and right step
         }
     } else {
         player->isWalking = false;
@@ -45,15 +56,24 @@ void UpdateCharacter(Character *player) {
 }
 
 void DrawCharacter(Character *player) {
-    if (player->texture.id != 0) {
-        // Draw texture centered on the character's position coordinate
-        Vector2 origin = { player->texture.width / 2.0f, player->texture.height / 2.0f };
-        Rectangle source = { 0, 0, (float)player->texture.width, (float)player->texture.height };
-        float bobOffset = (player->isWalking && player->stepToggle) ? 2.0f : 0.0f;
-        Rectangle dest = { player->position.x, player->position.y - bobOffset,
-                           (float)player->texture.width, (float)player->texture.height };
-        
-        DrawTexturePro(player->texture, source, dest, origin, 0.0f, WHITE);
+    Texture2D textureToDraw;
+
+    if (player->isWalking) {
+        // Use the left or right step texture based on the step toggle
+        textureToDraw = player->stepToggle ? player->leftStepTexture : player->rightStepTexture;
+    } else {
+        // Use the standing texture when not walking
+        textureToDraw = player->texture;
+    }
+
+    if (textureToDraw.id != 0) {
+        // Draw the selected texture centered on the character's position
+        Vector2 origin = { textureToDraw.width / 2.0f, textureToDraw.height / 2.0f };
+        Rectangle source = { 0, 0, (float)textureToDraw.width, (float)textureToDraw.height };
+        Rectangle dest = { player->position.x, player->position.y,
+                           (float)textureToDraw.width, (float)textureToDraw.height };
+
+        DrawTexturePro(textureToDraw, source, dest, origin, 0.0f, WHITE);
     } else {
         // Fallback: draw a red circle if the texture fails to load
         DrawCircleV(player->position, 10.0f, RED);
@@ -62,4 +82,6 @@ void DrawCharacter(Character *player) {
 
 void UnloadCharacter(Character *player) {
     UnloadTexture(player->texture);
+    UnloadTexture(player->leftStepTexture);
+    UnloadTexture(player->rightStepTexture);
 }
