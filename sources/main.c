@@ -29,6 +29,18 @@ const char* activeNPCName = "";
 bool isWaitingForAI = false;
 NPC* interactingNPC = NULL;
 
+bool IsBlockedByCollisionMask(Vector2 worldPos, const Color *maskPixels, int maskWidth, int maskHeight) {
+    int x = (int)worldPos.x;
+    int y = (int)worldPos.y;
+
+    if (x < 0 || y < 0 || x >= maskWidth || y >= maskHeight) {
+        return true;
+    }
+
+    Color pixel = maskPixels[y * maskWidth + x];
+    return (pixel.a > 0 && pixel.r < 20 && pixel.g < 20 && pixel.b < 20);
+}
+
 // --- Python Hook Function ---
 void GenerateGeminiDialog(const char* npcName, const char* itemName, char* buffer, size_t bufferSize) {
     char command[512];
@@ -126,6 +138,14 @@ int main(void)
     srand(time(NULL)); // Seed random number generator
 
     Texture2D background = LoadTexture("assets/bg.png");
+    Image collisionMaskImage = LoadImage("assets/collision.png");
+    Color *collisionMaskPixels = NULL;
+
+    if (collisionMaskImage.data != NULL) {
+        collisionMaskPixels = LoadImageColors(collisionMaskImage);
+    } else {
+        printf("WARNING: Could not load assets/collision.png. Movement will ignore collision mask.\n");
+    }
 
     Character player;
     InitCharacter(&player, (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f }, "assets/character.png");
@@ -189,7 +209,15 @@ int main(void)
 		    } 
 		    else {
 			    // Only move the player if we didn't click on an NPC
-			    player.targetPosition = mouseWorldPos;
+                bool canMoveToTarget = true;
+
+                if (collisionMaskPixels != NULL) {
+                    canMoveToTarget = !IsBlockedByCollisionMask(mouseWorldPos, collisionMaskPixels, collisionMaskImage.width, collisionMaskImage.height);
+                }
+
+                if (canMoveToTarget) {
+                    player.targetPosition = mouseWorldPos;
+                }
 		    }
 	    }
         }
@@ -286,6 +314,12 @@ int main(void)
     UnloadNPC(&garry);
     UnloadCharacter(&player);
     UnloadTexture(background); 
+    if (collisionMaskPixels != NULL) {
+        UnloadImageColors(collisionMaskPixels);
+    }
+    if (collisionMaskImage.data != NULL) {
+        UnloadImage(collisionMaskImage);
+    }
     CloseWindow();
 
     return 0;
