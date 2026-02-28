@@ -217,6 +217,9 @@ static Vector2 SpawnInScene(SceneType scene, MaskData masks[4]) {
 int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
+    InitAudioDevice(); 
+    Music bgMusic = LoadMusicStream("assets/background.mp3"); // Change this to your actual file path!
+    PlayMusicStream(bgMusic);
     SetTargetFPS(60);
     srand(time(NULL)); // Seed random number generator
 
@@ -315,6 +318,7 @@ int main(void)
 
     while (!WindowShouldClose())
     {
+	UpdateMusicStream(bgMusic);
         Vector2 mouseScreenPos = GetMousePosition();
         Vector2 mouseWorldPos = GetScreenToWorld2D(mouseScreenPos, camera);
 
@@ -492,6 +496,14 @@ int main(void)
     UnloadNPC(&marley);
     UnloadCharacter(&player);
     UnloadCurrentSceneTextures(); // scene manager owns the background
+    if (collisionMaskPixels != NULL) {
+        UnloadImageColors(collisionMaskPixels);
+    }
+    if (collisionMaskImage.data != NULL) {
+        UnloadImage(collisionMaskImage);
+    }
+    UnloadMusicStream(bgMusic);
+    CloseAudioDevice();
     // Free main-town mask
     if (collisionMaskPixels != NULL) UnloadImageColors(collisionMaskPixels);
     if (collisionMaskImage.data != NULL) UnloadImage(collisionMaskImage);
