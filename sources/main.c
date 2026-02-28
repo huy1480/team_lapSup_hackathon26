@@ -31,7 +31,7 @@ int main(void)
         DrawTexturePro(background, sourceRec, destRec, origin, 0.0f, WHITE);
 
         // Draw some overlay text at the top
-        const char* text = "Welcome to the Lego Western Town!";
+        const char* text = "Zaaaaayyyuuumn!!!!! xP";
         int fontSize = 30;
         const Vector2 text_size = MeasureTextEx(GetFontDefault(), text, fontSize, 1);
         
