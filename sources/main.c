@@ -1,8 +1,9 @@
 #include "raylib.h"
+#include "character.h" // Include our new header!
 
 #define SCREEN_WIDTH (1024)
 #define SCREEN_HEIGHT (576)
-#define WINDOW_TITLE "Lego Western Town - Auto-Follow Camera"
+#define WINDOW_TITLE "Lego Western Town - Point & Click"
 
 int main(void)
 {
@@ -11,37 +12,43 @@ int main(void)
 
     Texture2D background = LoadTexture("assets/bg.png");
 
+    // Initialize our character in the center of the screen
+    Character player;
+    InitCharacter(&player, (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f }, "assets/character.png");
+
     Camera2D camera = { 0 };
-    camera.zoom = 3.0f; // Permanently zoomed in 2x
-    
-    // Anchor the camera to the exact center of your screen
+    camera.zoom = 3.0f; 
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
-    camera.target = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+    camera.target = player.position;
 
     while (!WindowShouldClose())
     {
-        // --- Auto-Follow Logic ---
-        // Get where the mouse is on the screen
-        Vector2 desiredTarget = GetMousePosition();
-        
-        // --- Boundary Clamping ---
-        // Calculate the minimum and maximum coordinates the camera can look at 
-        // without showing the background behind the image.
+        // --- Input Logic ---
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            // CRITICAL: Translate the screen click to world coordinates
+            player.targetPosition = GetScreenToWorld2D(GetMousePosition(), camera);
+        }
+
+        // --- Update Logic ---
+        UpdateCharacter(&player);
+
+        // --- Camera Logic ---
+        Vector2 desiredCameraTarget = player.position;
+
+        // Boundary Clamping (keeps camera from showing out-of-bounds void)
         float minX = (SCREEN_WIDTH / 2.0f) / camera.zoom;
         float maxX = SCREEN_WIDTH - minX;
         float minY = (SCREEN_HEIGHT / 2.0f) / camera.zoom;
         float maxY = SCREEN_HEIGHT - minY;
 
-        // Force the desired target to stay within these boundaries
-        if (desiredTarget.x < minX) desiredTarget.x = minX;
-        if (desiredTarget.x > maxX) desiredTarget.x = maxX;
-        if (desiredTarget.y < minY) desiredTarget.y = minY;
-        if (desiredTarget.y > maxY) desiredTarget.y = maxY;
+        if (desiredCameraTarget.x < minX) desiredCameraTarget.x = minX;
+        if (desiredCameraTarget.x > maxX) desiredCameraTarget.x = maxX;
+        if (desiredCameraTarget.y < minY) desiredCameraTarget.y = minY;
+        if (desiredCameraTarget.y > maxY) desiredCameraTarget.y = maxY;
 
-        // Smoothly glide the camera toward the mouse position
-        // The 0.05f dictates the speed. Lower = "floatier" and smoother, Higher = faster and snappier.
-        camera.target.x += (desiredTarget.x - camera.target.x) * 0.05f;
-        camera.target.y += (desiredTarget.y - camera.target.y) * 0.05f;
+        // Smoothly glide camera to the clamped target
+        camera.target.x += (desiredCameraTarget.x - camera.target.x) * 0.05f;
+        camera.target.y += (desiredCameraTarget.y - camera.target.y) * 0.05f;
 
         // --- Drawing ---
         BeginDrawing();
@@ -52,25 +59,24 @@ int main(void)
         if (background.id != 0) 
         {
             Rectangle sourceRec = { 0.0f, 0.0f, (float)background.width, (float)background.height };
-            // We scale the image to the screen size. 
-            // The camera zoom takes care of magnifying it!
             Rectangle destRec = { 0.0f, 0.0f, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT };
             DrawTexturePro(background, sourceRec, destRec, (Vector2){0,0}, 0.0f, WHITE);
         }
-        else
-        {
-            DrawText("IMAGE FAILED TO LOAD! Check file path.", 100, 100, 30, RED);
-        }
+
+        // Draw the player on top of the background
+        DrawCharacter(&player);
 
         EndMode2D();
 
         // UI Layer
         DrawRectangle(10, 10, 310, 30, Fade(BLACK, 0.7f));
-        DrawText("Move mouse to explore the town!", 20, 15, 18, RAYWHITE);
+        DrawText("Click to move the character!", 20, 15, 18, RAYWHITE);
 
         EndDrawing();
     }
 
+    // Unload assets
+    UnloadCharacter(&player);
     UnloadTexture(background); 
     CloseWindow();
 
