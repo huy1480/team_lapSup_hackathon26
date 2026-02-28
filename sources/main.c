@@ -152,18 +152,47 @@ int main(void)
     Character player;
     InitCharacter(&player, (Vector2){ 2500.0f, 1400.0f }, "assets/character.png");
 
-    NPC sheriff;
+    // --- NPC Initialization ---
+    NPC sheriff, garry, dale, susan, kitty, buster, tommy, barry, marley;
+
     InitNPC(&sheriff, (Vector2){ 500.0f, 300.0f }, "Sheriff Burbrick", "assets/sheriff.png");
-    sheriff.questItem = "Lost Badge"; // Assign quests
-    
-    NPC garry;
+    sheriff.questItem = "Lost Badge";
+
     InitNPC(&garry, (Vector2){ 800.0f, 500.0f }, "Gunslinger Gary", "assets/gary.png");
     garry.questItem = "Lucky Horseshoe";
 
-    // Initialize Random Items
-    Item items[2];
-    items[0] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lost Badge", true };
+    InitNPC(&dale, (Vector2){ 260.0f, 270.0f }, "Dynamite Dale", "assets/dale.png");
+    dale.questItem = "TNT Plunger";
+
+    InitNPC(&susan, (Vector2){ 800.0f, 480.0f }, "Stable Susan", "assets/susan.png");
+    susan.questItem = "Golden Saddle";
+
+    InitNPC(&kitty, (Vector2){ 500.0f, 450.0f }, "Kitty", "assets/kitty.png");
+    kitty.questItem = "Feather Boa";
+
+    InitNPC(&buster, (Vector2){ 860.0f, 680.0f }, "Buster the Bandit", "assets/buster.png");
+    buster.questItem = "Stolen Loot";
+
+    InitNPC(&tommy, (Vector2){ 350.0f, 680.0f }, "Tommy Treasurer", "assets/tommy.png");
+    tommy.questItem = "Ledger";
+
+    InitNPC(&barry, (Vector2){ 640.0f, 620.0f }, "Barry the Barkeep", "assets/barry.png");
+    barry.questItem = "Special Whiskey";
+
+    InitNPC(&marley, (Vector2){ 680.0f, 580.0f }, "Marley the Musician", "assets/marley.png");
+    marley.questItem = "Tuning Fork";
+
+    // --- Initialize Items (9 total, one per NPC) ---
+    Item items[9];
+    items[0] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lost Badge",      true };
     items[1] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lucky Horseshoe", true };
+    items[2] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "TNT Plunger",     true };
+    items[3] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Golden Saddle",   true };
+    items[4] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Feather Boa",     true };
+    items[5] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Stolen Loot",     true };
+    items[6] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Ledger",          true };
+    items[7] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Special Whiskey", true };
+    items[8] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Tuning Fork",     true };
 
     Camera2D camera = { 0 };
     camera.zoom = 2.0f; 
@@ -185,9 +214,15 @@ int main(void)
 	    // 2. If Dialog is closed, we check for World interactions
 	    else {
 		    NPC* clickedNPC = NULL;
-		    if (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
-		    else if (IsNPCClicked(&garry, mouseWorldPos)) clickedNPC = &garry;
-
+	    if (IsNPCClicked(&sheriff, mouseWorldPos))      clickedNPC = &sheriff;
+	    else if (IsNPCClicked(&garry,  mouseWorldPos)) clickedNPC = &garry;
+	    else if (IsNPCClicked(&dale,   mouseWorldPos)) clickedNPC = &dale;
+	    else if (IsNPCClicked(&susan,  mouseWorldPos)) clickedNPC = &susan;
+	    else if (IsNPCClicked(&kitty,  mouseWorldPos)) clickedNPC = &kitty;
+	    else if (IsNPCClicked(&buster, mouseWorldPos)) clickedNPC = &buster;
+	    else if (IsNPCClicked(&tommy,  mouseWorldPos)) clickedNPC = &tommy;
+	    else if (IsNPCClicked(&barry,  mouseWorldPos)) clickedNPC = &barry;
+	    else if (IsNPCClicked(&marley, mouseWorldPos)) clickedNPC = &marley;
 		    if (clickedNPC != NULL) {
 			    activeNPCName = clickedNPC->name;
 			    isDialogOpen = true;
@@ -234,7 +269,7 @@ int main(void)
 
             // Item pickup only makes sense in the main town
             if (currentScene == SCENE_MAIN_TOWN) {
-                for (int i = 0; i < 2; i++) {
+                for (int i = 0; i < 9; i++) {
                     if (items[i].active && Vector2Distance(player.position, items[i].position) < 20.0f) {
                         items[i].active = false;
                         player.heldItem = items[i].name;
@@ -259,7 +294,7 @@ int main(void)
         // NPCs, items, and entrance markers are only in the main town
         if (currentScene == SCENE_MAIN_TOWN) {
             // Draw active items (yellow squares)
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 9; i++) {
                 if (items[i].active) {
                     DrawRectangle(items[i].position.x - 5, items[i].position.y - 5, 10, 10, GOLD);
                     DrawText(items[i].name, items[i].position.x - 10, items[i].position.y - 15, 10, RAYWHITE);
@@ -268,6 +303,13 @@ int main(void)
 
             DrawNPC(&sheriff);
             DrawNPC(&garry);
+            DrawNPC(&dale);
+            DrawNPC(&susan);
+            DrawNPC(&kitty);
+            DrawNPC(&buster);
+            DrawNPC(&tommy);
+            DrawNPC(&barry);
+            DrawNPC(&marley);
 
             // Teleport zone markers – walk into these to switch scene
             DrawRectangleLinesEx((Rectangle){ 2383, 1812, 80, 60 }, 2, RED);
@@ -351,6 +393,13 @@ int main(void)
 
     UnloadNPC(&sheriff);
     UnloadNPC(&garry);
+    UnloadNPC(&dale);
+    UnloadNPC(&susan);
+    UnloadNPC(&kitty);
+    UnloadNPC(&buster);
+    UnloadNPC(&tommy);
+    UnloadNPC(&barry);
+    UnloadNPC(&marley);
     UnloadCharacter(&player);
     UnloadCurrentSceneTextures(); // scene manager owns the background
     if (collisionMaskPixels != NULL) {
