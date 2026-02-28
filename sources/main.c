@@ -12,7 +12,7 @@ int main(void)
     Texture2D background = LoadTexture("assets/bg.png");
 
     Camera2D camera = { 0 };
-    camera.zoom = 5.0f; // Permanently zoomed in 2x
+    camera.zoom = 3.0f; // Permanently zoomed in 2x
     
     // Anchor the camera to the exact center of your screen
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
