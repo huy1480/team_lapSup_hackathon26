@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "scene_manager.h"
 #include "character.h"
 #include "npc.h"
 #include "item.h"
@@ -115,10 +116,19 @@ int main(void)
     SetTargetFPS(60);
     srand(time(NULL)); 
 
-    Texture2D background = LoadTexture("assets/bg.png"); // Corrected to match your jpg file
+    // Scene manager owns the background texture from here on
+    InitScenes();
+    Image collisionMaskImage = LoadImage("assets/collision.png");
+    Color *collisionMaskPixels = NULL;
+
+    if (collisionMaskImage.data != NULL) {
+        collisionMaskPixels = LoadImageColors(collisionMaskImage);
+    } else {
+        printf("WARNING: Could not load assets/collision.png. Movement will ignore collision mask.\n");
+    }
 
     Character player;
-    InitCharacter(&player, (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f }, "assets/character.png");
+    InitCharacter(&player, (Vector2){ 2500.0f, 1400.0f }, "assets/character.png");
 
     // --- NPC Initialization ---
     NPC sheriff, garry, dale, susan, kitty, buster, tommy, barry, marley;
@@ -179,37 +189,43 @@ int main(void)
                     isDialogOpen = false; 
                 }
             } 
-            else {
-                NPC* clickedNPC = NULL;
-                if (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
-                else if (IsNPCClicked(&garry, mouseWorldPos)) clickedNPC = &garry;
-                else if (IsNPCClicked(&dale, mouseWorldPos)) clickedNPC = &dale;
-                else if (IsNPCClicked(&susan, mouseWorldPos)) clickedNPC = &susan;
-                else if (IsNPCClicked(&kitty, mouseWorldPos)) clickedNPC = &kitty;
-                else if (IsNPCClicked(&buster, mouseWorldPos)) clickedNPC = &buster;
-                else if (IsNPCClicked(&tommy, mouseWorldPos)) clickedNPC = &tommy;
-                else if (IsNPCClicked(&barry, mouseWorldPos)) clickedNPC = &barry;
-                else if (IsNPCClicked(&marley, mouseWorldPos)) clickedNPC = &marley;
+	    // 2. If Dialog is closed, we check for World interactions
+	    else {
+		    NPC* clickedNPC = NULL;
+		    if (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
+		    else if (IsNPCClicked(&garry, mouseWorldPos)) clickedNPC = &garry;
 
-                if (clickedNPC != NULL) {
-                    activeNPCName = clickedNPC->name;
-                    isDialogOpen = true;
+		    if (clickedNPC != NULL) {
+			    activeNPCName = clickedNPC->name;
+			    isDialogOpen = true;
 
-                    if (clickedNPC->questCompleted) {
-                        snprintf(activeDialogText, sizeof(activeDialogText), "Much obliged for your help earlier, partner!");
-                    } 
-                    else if (player.heldItem != NULL && strcmp(player.heldItem, clickedNPC->questItem) == 0) {
-                        snprintf(activeDialogText, sizeof(activeDialogText), "Well I'll be! You found my %s. Thank ye kindly!", clickedNPC->questItem);
-                        clickedNPC->questCompleted = true;
-                        player.heldItem = NULL; 
-                    } 
-                    else {
-                        snprintf(activeDialogText, sizeof(activeDialogText), "Hmm...");
-                        isWaitingForAI = true;        
-                        interactingNPC = clickedNPC;  
-                    }
-                } 
-                else {
+			    // Instant Response: Quest is already done
+			    if (clickedNPC->questCompleted) {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Much obliged for your help earlier, partner!");
+			    } 
+			    // Instant Response: Player has the item
+			    else if (player.heldItem != NULL && strcmp(player.heldItem, clickedNPC->questItem) == 0) {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Well I'll be! You found my %s. Thank ye kindly!", clickedNPC->questItem);
+				    clickedNPC->questCompleted = true;
+				    player.heldItem = NULL; // Consume the item
+			    } 
+			    // Delayed AI Response: Trigger the "Hmm..." loading state
+			    else {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Hmm...");
+				    isWaitingForAI = true;        // Flag that we need to call Gemini
+				    interactingNPC = clickedNPC;  // Remember who we are talking to
+			    }
+		    } 
+		    else {
+			    // Only move the player if we didn't click on an NPC
+                bool canMoveToTarget = true;
+
+                // Collision mask only applies in the main town
+                if (collisionMaskPixels != NULL && currentScene == SCENE_MAIN_TOWN) {
+                    canMoveToTarget = !IsBlockedByCollisionMask(mouseWorldPos, collisionMaskPixels, collisionMaskImage.width, collisionMaskImage.height);
+                }
+
+                if (canMoveToTarget) {
                     player.targetPosition = mouseWorldPos;
                 }
             }
@@ -219,10 +235,16 @@ int main(void)
         if (!isDialogOpen) {
             UpdateCharacter(&player);
 
-            for (int i = 0; i < 9; i++) {
-                if (items[i].active && Vector2Distance(player.position, items[i].position) < 20.0f) {
-                    items[i].active = false;
-                    player.heldItem = items[i].name; 
+            // Check for a scene transition every frame
+            CheckForSceneSwitch(player.position, &player);
+
+            // Item pickup only makes sense in the main town
+            if (currentScene == SCENE_MAIN_TOWN) {
+                for (int i = 0; i < 2; i++) {
+                    if (items[i].active && Vector2Distance(player.position, items[i].position) < 20.0f) {
+                        items[i].active = false;
+                        player.heldItem = items[i].name;
+                    }
                 }
             }
         }
@@ -235,15 +257,38 @@ int main(void)
 
         BeginMode2D(camera);
 
-        if (background.id != 0) {
-            DrawTextureEx(background, (Vector2){0,0}, 0.0f, 1.0f, WHITE);
+        if (currentBackground.id != 0) {
+            DrawTextureEx(currentBackground, (Vector2){0,0}, 0.0f, 1.0f, WHITE);
         }
 
-        for (int i = 0; i < 9; i++) {
-            if (items[i].active) {
-                DrawRectangle(items[i].position.x - 5, items[i].position.y - 5, 10, 10, GOLD);
-                DrawText(items[i].name, items[i].position.x - 10, items[i].position.y - 15, 10, RAYWHITE);
+        // NPCs, items, and entrance markers are only in the main town
+        if (currentScene == SCENE_MAIN_TOWN) {
+            // Draw active items (yellow squares)
+            for (int i = 0; i < 2; i++) {
+                if (items[i].active) {
+                    DrawRectangle(items[i].position.x - 5, items[i].position.y - 5, 10, 10, GOLD);
+                    DrawText(items[i].name, items[i].position.x - 10, items[i].position.y - 15, 10, RAYWHITE);
+                }
             }
+
+            DrawNPC(&sheriff);
+            DrawNPC(&garry);
+
+            // Teleport zone markers – walk into these to switch scene
+            DrawRectangleLinesEx((Rectangle){ 2383, 1812, 80, 60 }, 2, RED);
+            DrawText("[Saloon]",  2386, 1820, 10, RED);
+            DrawRectangleLinesEx((Rectangle){ 2903, 1208, 80, 60 }, 2, BLUE);
+            DrawText("[Stables]", 2906, 1216, 10, BLUE);
+            DrawRectangleLinesEx((Rectangle){ 3499, 1502, 80, 60 }, 2, GREEN);
+            DrawText("[Range]",   3502, 1510, 10, GREEN);
+        } else {
+            // Exit zone marker – position differs per sub-scene
+            Rectangle exitRect = { 0 };
+            if (currentScene == SCENE_SALOON)         exitRect = (Rectangle){  71, 523, 80, 60 };
+            else if (currentScene == SCENE_STABLES)   exitRect = (Rectangle){ 194, 647, 80, 60 };
+            else if (currentScene == SCENE_SHOOTING_RANGE) exitRect = (Rectangle){ 65, 554, 80, 60 };
+            DrawRectangleLinesEx(exitRect, 2, ORANGE);
+            DrawText("[Exit]", (int)exitRect.x + 5, (int)exitRect.y + 22, 10, ORANGE);
         }
 
         DrawNPC(&sheriff);
@@ -280,14 +325,27 @@ int main(void)
             DrawText("Okay!", (int)okBtn.x + 25, (int)okBtn.y + 10, 20, BLACK);
         }
 
-        DrawRectangle(10, 10, 310, 50, Fade(BLACK, 0.7f));
-        DrawText("Click an NPC to talk to them!", 20, 15, 18, RAYWHITE);
-        
-        if (player.heldItem) {
-            DrawText(TextFormat("Holding: %s", player.heldItem), 20, 35, 16, GOLD);
+        // Top-Left UI – context-aware
+        DrawRectangle(10, 10, 350, 50, Fade(BLACK, 0.7f));
+        if (currentScene == SCENE_MAIN_TOWN) {
+            DrawText("Click an NPC to talk to them!", 20, 15, 18, RAYWHITE);
+            if (player.heldItem) {
+                DrawText(TextFormat("Holding: %s", player.heldItem), 20, 35, 16, GOLD);
+            } else {
+                DrawText("Holding: Nothing", 20, 35, 16, LIGHTGRAY);
+            }
         } else {
-            DrawText("Holding: Nothing", 20, 35, 16, LIGHTGRAY);
+            const char *sceneName = (currentScene == SCENE_SALOON)         ? "The Saloon" :
+                                    (currentScene == SCENE_STABLES)        ? "Stables"    :
+                                    (currentScene == SCENE_SHOOTING_RANGE) ? "Practice Range" : "?";
+            DrawText(TextFormat("Location: %s", sceneName), 20, 15, 18, YELLOW);
+            DrawText("Walk to the orange [Exit] to leave", 20, 35, 14, LIGHTGRAY);
         }
+
+        // Mouse world-coordinate tracker (bottom-right corner)
+        DrawRectangle(SCREEN_WIDTH - 220, SCREEN_HEIGHT - 34, 210, 24, Fade(BLACK, 0.7f));
+        DrawText(TextFormat("World: %.0f, %.0f", mouseWorldPos.x, mouseWorldPos.y),
+                 SCREEN_WIDTH - 215, SCREEN_HEIGHT - 29, 16, LIME);
 
         EndDrawing();
 
@@ -310,7 +368,13 @@ int main(void)
     UnloadNPC(&marley);
 
     UnloadCharacter(&player);
-    UnloadTexture(background); 
+    UnloadCurrentSceneTextures(); // scene manager owns the background
+    if (collisionMaskPixels != NULL) {
+        UnloadImageColors(collisionMaskPixels);
+    }
+    if (collisionMaskImage.data != NULL) {
+        UnloadImage(collisionMaskImage);
+    }
     CloseWindow();
 
     return 0;
