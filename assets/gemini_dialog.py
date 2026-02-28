@@ -1,5 +1,9 @@
 import sys
+import os
 from google import genai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 CHARACTER_DATA = {
     "SHERIFF": {
@@ -43,7 +47,7 @@ CHARACTER_DATA = {
 }
 
 # --- PASTE YOUR GEMINI API KEY HERE ---
-API_KEY = "AIzaSyBsHojW0wGDfvU0VJY9eOCAYw4TOsTpwE8"
+API_KEY = "AIzaSyB9n2bH7oSaC-s-dU9hks-pFt4E2_vRuA8"
 
 def main():
     if len(sys.argv) < 3:
@@ -53,8 +57,12 @@ def main():
     npc_name = sys.argv[1]
     item_name = sys.argv[2]
     
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Error: GEMINI_API_KEY not found. Make sure your .env file is set up correctly.")
+        return
 
-    client = genai.Client(api_key=API_KEY)
+    client = genai.Client(api_key=api_key)
     
     # Using the flash model for speed
 
