@@ -8,6 +8,10 @@ typedef struct Character {
     Vector2 targetPosition; // Where the character is walking to
     Texture2D texture;
     float speed;
+    bool isWalking;
+    bool stepToggle;
+    float stepTimer;
+    float stepInterval;
     const char* heldItem;
 } Character;
 

@@ -158,44 +158,44 @@ int main(void)
     // --- NPC Initialization ---
     NPC sheriff, garry, dale, susan, kitty, buster, tommy, barry, marley;
 
-    InitNPC(&sheriff, (Vector2){ 500.0f, 300.0f }, "Sheriff Burbrick", "assets/sheriff.png");
+    InitNPC(&sheriff, (Vector2){ 2480.0f, 1420.0f }, "Sheriff Burbrick", "assets/sheriff.png");
     sheriff.questItem = "Lost Badge";
 
-    InitNPC(&garry, (Vector2){ 800.0f, 500.0f }, "Gunslinger Gary", "assets/gary.png");
+    InitNPC(&garry, (Vector2){ 2620.0f, 1500.0f }, "Gunslinger Gary", "assets/gary.png");
     garry.questItem = "Lucky Horseshoe";
 
-    InitNPC(&dale, (Vector2){ 260.0f, 270.0f }, "Dynamite Dale", "assets/dale.png");
+    InitNPC(&dale, (Vector2){ 2310.0f, 1320.0f }, "Dynamite Dale", "assets/dale.png");
     dale.questItem = "TNT Plunger";
 
-    InitNPC(&susan, (Vector2){ 800.0f, 480.0f }, "Stable Susan", "assets/susan.png");
+    InitNPC(&susan, (Vector2){ 2860.0f, 1220.0f }, "Stable Susan", "assets/susan.png");
     susan.questItem = "Golden Saddle";
 
-    InitNPC(&kitty, (Vector2){ 500.0f, 450.0f }, "Kitty", "assets/kitty.png");
+    InitNPC(&kitty, (Vector2){ 2520.0f, 1560.0f }, "Kitty", "assets/kitty.png");
     kitty.questItem = "Feather Boa";
 
-    InitNPC(&buster, (Vector2){ 860.0f, 680.0f }, "Buster the Bandit", "assets/buster.png");
+    InitNPC(&buster, (Vector2){ 3430.0f, 1480.0f }, "Buster the Bandit", "assets/buster.png");
     buster.questItem = "Stolen Loot";
 
-    InitNPC(&tommy, (Vector2){ 350.0f, 680.0f }, "Tommy Treasurer", "assets/tommy.png");
+    InitNPC(&tommy, (Vector2){ 2380.0f, 1710.0f }, "Tommy Treasurer", "assets/tommy.png");
     tommy.questItem = "Ledger";
 
-    InitNPC(&barry, (Vector2){ 640.0f, 620.0f }, "Barry the Barkeep", "assets/barry.png");
+    InitNPC(&barry, (Vector2){ 2450.0f, 1780.0f }, "Barry the Barkeep", "assets/barry.png");
     barry.questItem = "Special Whiskey";
 
-    InitNPC(&marley, (Vector2){ 680.0f, 580.0f }, "Marley the Musician", "assets/marley.png");
+    InitNPC(&marley, (Vector2){ 2400.0f, 1860.0f }, "Marley the Musician", "assets/marley.png");
     marley.questItem = "Tuning Fork";
 
     // --- Initialize Items (9 total, one per NPC) ---
     Item items[9];
-    items[0] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lost Badge",      true };
-    items[1] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lucky Horseshoe", true };
-    items[2] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "TNT Plunger",     true };
-    items[3] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Golden Saddle",   true };
-    items[4] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Feather Boa",     true };
-    items[5] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Stolen Loot",     true };
-    items[6] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Ledger",          true };
-    items[7] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Special Whiskey", true };
-    items[8] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Tuning Fork",     true };
+    items[0] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Lost Badge",      true };
+    items[1] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Lucky Horseshoe", true };
+    items[2] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "TNT Plunger",     true };
+    items[3] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Golden Saddle",   true };
+    items[4] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Feather Boa",     true };
+    items[5] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Stolen Loot",     true };
+    items[6] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Ledger",          true };
+    items[7] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Special Whiskey", true };
+    items[8] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Tuning Fork",     true };
 
     Camera2D camera = { 0 };
     camera.zoom = 2.0f; 
