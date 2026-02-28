@@ -8,6 +8,8 @@ typedef struct NPC {
     Texture2D texture;
     const char* name;
     Rectangle bounds; // The clickable area around the NPC
+    const char *questItem;
+    bool questCompleted;
 } NPC;
 
 void InitNPC(NPC *npc, Vector2 pos, const char* name, const char* texturePath);

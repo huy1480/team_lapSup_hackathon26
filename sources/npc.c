@@ -1,10 +1,14 @@
 #include "npc.h"
+#include <stddef.h>
 
 void InitNPC(NPC *npc, Vector2 pos, const char* name, const char* texturePath) {
     npc->position = pos;
     npc->name = name;
     npc->texture = LoadTexture(texturePath);
-    
+
+    npc->questItem = NULL;
+    npc->questCompleted = false;   
+
     // If texture fails to load, use a 32x32 placeholder size
     float width = npc->texture.id != 0 ? (float)npc->texture.width : 32.0f;
     float height = npc->texture.id != 0 ? (float)npc->texture.height : 32.0f;

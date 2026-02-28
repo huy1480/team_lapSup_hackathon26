@@ -1,18 +1,106 @@
 #include "raylib.h"
+#include "raymath.h"
 #include "character.h"
-#include "npc.h" // Include our new NPCs!
+#include "npc.h"
+#include "item.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #define SCREEN_WIDTH (1024)
 #define SCREEN_HEIGHT (576)
-#define WINDOW_TITLE "Lego Western Town - NPCs & Dialog"
+#define WINDOW_TITLE "Lego Western Town - AI NPCs!"
 
 // --- Global UI State ---
 bool isDialogOpen = false;
-const char* activeDialogText = "";
+char activeDialogText[1024] = ""; // Changed to a buffer so we can write Gemini's response to it
+const char* activeNPCName = "";
+bool isWaitingForAI = false;
+NPC* interactingNPC = NULL;
 
-// The function you requested!
-void OpenNPCDialog(const char* npcName) {
-    activeDialogText = npcName;
+// --- Python Hook Function ---
+void GenerateGeminiDialog(const char* npcName, const char* itemName, char* buffer, size_t bufferSize) {
+    char command[512];
+    
+    // Format the command to run Python. Note: Use "python3" if you are on Mac/Linux!
+    snprintf(command, sizeof(command), "python gemini_dialog.py \"%s\" \"%s\"", npcName, itemName);
+
+    // popen opens a pipe to the console command and lets us read the output
+    FILE *fp = popen(command, "r");
+    if (fp == NULL) {
+        snprintf(buffer, bufferSize, "Error: Could not run Python script.");
+        return;
+    }
+
+    buffer[0] = '\0'; // Clear buffer
+    char line[256];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        strncat(buffer, line, bufferSize - strlen(buffer) - 1);
+    }
+
+    printf("\n--- GEMINI DIALOG GENERATED ---\n");
+    printf("NPC: %s\n", npcName);
+    printf("Text: %s\n", buffer);
+    printf("-------------------------------\n\n");   pclose(fp);
+}
+
+// --- Text Wrapping Helper ---
+// Modifies a string in-place, replacing spaces with newlines to fit a maximum pixel width.
+void WrapText(char *text, int maxLineWidth, int fontSize) {
+    int length = strlen(text);
+    int lineStart = 0;
+    int lastSpace = -1;
+    char temp[1024];
+
+    for (int i = 0; i < length; i++) {
+        if (text[i] == ' ') lastSpace = i;
+        if (text[i] == '\n') { // Reset if Gemini happened to generate a newline
+            lineStart = i + 1;
+            continue;
+        }
+
+        // Copy current line into a temporary buffer to measure it
+        int currentLength = i - lineStart + 1;
+        if (currentLength >= sizeof(temp)) currentLength = sizeof(temp) - 1; // Safegaurd
+        
+        strncpy(temp, text + lineStart, currentLength);
+        temp[currentLength] = '\0';
+
+        // Check if the current chunk of text exceeds our box width
+        if (MeasureText(temp, fontSize) > maxLineWidth) {
+            if (lastSpace > lineStart) {
+                text[lastSpace] = '\n';     // Replace the last space with a newline
+                lineStart = lastSpace + 1;  // Update the start of the new line
+                i = lineStart - 1;          // Backtrack loop to measure properly from the new line
+            } else {
+                // Fallback: Force a break if a single word is somehow wider than the whole box
+                text[i] = '\n';
+                lineStart = i + 1;
+            }
+        }
+    }
+}
+
+// Function to handle the interaction logic
+void InteractWithNPC(NPC* npc, Character* player) {
+    activeNPCName = npc->name;
+    
+    if (npc->questCompleted) {
+        snprintf(activeDialogText, sizeof(activeDialogText), "Much obliged for your help earlier, partner!");
+    } 
+    else if (player->heldItem != NULL && strcmp(player->heldItem, npc->questItem) == 0) {
+        // Player has the item!
+        snprintf(activeDialogText, sizeof(activeDialogText), "Well I'll be! You found my %s. Thank ye kindly!", npc->questItem);
+        npc->questCompleted = true;
+        player->heldItem = NULL; // Consume the item
+    } 
+    else {
+        // Generate dynamic quest dialog using Gemini
+        GenerateGeminiDialog(npc->name, npc->questItem, activeDialogText, sizeof(activeDialogText));
+    }
+    
+    WrapText(activeDialogText, 560, 20); // 560 max width, 20 font size
     isDialogOpen = true;
 }
 
@@ -20,23 +108,29 @@ int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
     SetTargetFPS(60);
+    srand(time(NULL)); // Seed random number generator
 
     Texture2D background = LoadTexture("assets/bg.png");
 
     Character player;
     InitCharacter(&player, (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f }, "assets/character.png");
 
-    // Initialize our NPCs
     NPC sheriff;
     InitNPC(&sheriff, (Vector2){ 500.0f, 300.0f }, "Sheriff Burbrick", "assets/sheriff.png");
+    sheriff.questItem = "Lost Badge"; // Assign quests
     
     NPC garry;
-    InitNPC(&garry, (Vector2){ 800.0f, 500.0f }, "Gunslinger Garry", "assets/gary.png");
+    InitNPC(&garry, (Vector2){ 800.0f, 500.0f }, "Gunslinger Gary", "assets/gary.png");
+    garry.questItem = "Lucky Horseshoe";
+
+    // Initialize Random Items
+    Item items[2];
+    items[0] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lost Badge", true };
+    items[1] = (Item){ (Vector2){ rand() % 800 + 100, rand() % 400 + 100 }, "Lucky Horseshoe", true };
 
     Camera2D camera = { 0 };
     camera.zoom = 3.0f; 
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
-    camera.target = player.position;
 
     while (!WindowShouldClose())
     {
@@ -45,67 +139,80 @@ int main(void)
 
         // --- Input Logic ---
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            
-            // 1. If Dialog is open, we ONLY check for UI button clicks
             if (isDialogOpen) {
-                // We define the button rectangle in screen space
-                Rectangle okBtn = { SCREEN_WIDTH / 2.0f - 50, SCREEN_HEIGHT / 2.0f + 30, 100, 40 };
-                
-                // Did we click inside the "Okay" button?
+                Rectangle okBtn = { SCREEN_WIDTH / 2.0f - 50, SCREEN_HEIGHT / 2.0f + 60, 100, 40 };
                 if (CheckCollisionPointRec(mouseScreenPos, okBtn)) {
-                    isDialogOpen = false; // Close the dialog
+                    isDialogOpen = false; 
                 }
             } 
-            // 2. If Dialog is closed, we check for World interactions
-            else {
-                if (IsNPCClicked(&sheriff, mouseWorldPos)) {
-                    OpenNPCDialog(sheriff.name);
-                } 
-                else if (IsNPCClicked(&garry, mouseWorldPos)) {
-                    OpenNPCDialog(garry.name);
-                } 
-                else {
-                    // Only move the player if we didn't click on an NPC
-                    player.targetPosition = mouseWorldPos;
+	    // 2. If Dialog is closed, we check for World interactions
+	    else {
+		    NPC* clickedNPC = NULL;
+		    if (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
+		    else if (IsNPCClicked(&garry, mouseWorldPos)) clickedNPC = &garry;
+
+		    if (clickedNPC != NULL) {
+			    activeNPCName = clickedNPC->name;
+			    isDialogOpen = true;
+
+			    // Instant Response: Quest is already done
+			    if (clickedNPC->questCompleted) {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Much obliged for your help earlier, partner!");
+			    } 
+			    // Instant Response: Player has the item
+			    else if (player.heldItem != NULL && strcmp(player.heldItem, clickedNPC->questItem) == 0) {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Well I'll be! You found my %s. Thank ye kindly!", clickedNPC->questItem);
+				    clickedNPC->questCompleted = true;
+				    player.heldItem = NULL; // Consume the item
+			    } 
+			    // Delayed AI Response: Trigger the "Hmm..." loading state
+			    else {
+				    snprintf(activeDialogText, sizeof(activeDialogText), "Hmm...");
+				    isWaitingForAI = true;        // Flag that we need to call Gemini
+				    interactingNPC = clickedNPC;  // Remember who we are talking to
+			    }
+		    } 
+		    else {
+			    // Only move the player if we didn't click on an NPC
+			    player.targetPosition = mouseWorldPos;
+		    }
+	    }
+        }
+
+        // --- Update Logic ---
+        if (!isDialogOpen) {
+            UpdateCharacter(&player);
+
+            // Check for item pickup
+            for (int i = 0; i < 2; i++) {
+                if (items[i].active && Vector2Distance(player.position, items[i].position) < 20.0f) {
+                    items[i].active = false;
+                    player.heldItem = items[i].name; 
                 }
             }
         }
 
-        // --- Update Logic ---
-        // Don't update the player's movement if they are locked in a conversation
-        if (!isDialogOpen) {
-            UpdateCharacter(&player);
-        }
-
-        // --- Camera Logic ---
-        Vector2 desiredCameraTarget = player.position;
-        float minX = (SCREEN_WIDTH / 2.0f) / camera.zoom;
-        float maxX = SCREEN_WIDTH - minX;
-        float minY = (SCREEN_HEIGHT / 2.0f) / camera.zoom;
-        float maxY = SCREEN_HEIGHT - minY;
-
-        if (desiredCameraTarget.x < minX) desiredCameraTarget.x = minX;
-        if (desiredCameraTarget.x > maxX) desiredCameraTarget.x = maxX;
-        if (desiredCameraTarget.y < minY) desiredCameraTarget.y = minY;
-        if (desiredCameraTarget.y > maxY) desiredCameraTarget.y = maxY;
-
-        camera.target.x += (desiredCameraTarget.x - camera.target.x) * 0.05f;
-        camera.target.y += (desiredCameraTarget.y - camera.target.y) * 0.05f;
+        // Camera Logic
+        camera.target = player.position;
 
         // --- Drawing ---
         BeginDrawing();
         ClearBackground(DARKGRAY);
 
-        // -- WORLD SPACE DRAWING --
         BeginMode2D(camera);
 
         if (background.id != 0) {
-            Rectangle sourceRec = { 0.0f, 0.0f, (float)background.width, (float)background.height };
-            Rectangle destRec = { 0.0f, 0.0f, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT };
-            DrawTexturePro(background, sourceRec, destRec, (Vector2){0,0}, 0.0f, WHITE);
+            DrawTextureEx(background, (Vector2){0,0}, 0.0f, 1.0f, WHITE);
         }
 
-        // Draw NPCs and Player
+        // Draw active items (yellow squares)
+        for (int i = 0; i < 2; i++) {
+            if (items[i].active) {
+                DrawRectangle(items[i].position.x - 5, items[i].position.y - 5, 10, 10, GOLD);
+                DrawText(items[i].name, items[i].position.x - 10, items[i].position.y - 15, 10, RAYWHITE);
+            }
+        }
+
         DrawNPC(&sheriff);
         DrawNPC(&garry);
         DrawCharacter(&player);
@@ -113,41 +220,53 @@ int main(void)
         EndMode2D();
 
         // -- SCREEN SPACE DRAWING (UI) --
-        
-        // Render the Dialog Box on top of everything if it is open
         if (isDialogOpen) {
-            // Semi-transparent dark overlay to focus attention on the dialog
             DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Fade(BLACK, 0.6f));
 
-            // Main Dialog Box
-            Rectangle dialogRec = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 100, 400, 200 };
+            Rectangle dialogRec = { SCREEN_WIDTH / 2.0f - 300, SCREEN_HEIGHT / 2.0f - 100, 600, 250 };
             DrawRectangleRec(dialogRec, RAYWHITE);
             DrawRectangleLinesEx(dialogRec, 4, DARKGRAY);
 
-            // Dialog Text
-            const char* message = TextFormat("Howdy! My name is %s.", activeDialogText);
-            DrawText(message, (int)dialogRec.x + 20, (int)dialogRec.y + 40, 20, BLACK);
+            // NPC Name Header
+            DrawText(activeNPCName, (int)dialogRec.x + 20, (int)dialogRec.y + 15, 24, DARKBLUE);
+            DrawLine((int)dialogRec.x + 20, (int)dialogRec.y + 45, (int)dialogRec.x + 580, (int)dialogRec.y + 45, GRAY);
 
-            // Okay Button Logic & Rendering
-            Rectangle okBtn = { SCREEN_WIDTH / 2.0f - 50, SCREEN_HEIGHT / 2.0f + 30, 100, 40 };
-            
-            // Highlight button if mouse is hovering over it
+            // Render the AI Dialog (Using a slightly smaller font so it fits)
+            DrawText(activeDialogText, (int)dialogRec.x + 20, (int)dialogRec.y + 60, 20, BLACK);
+
+            Rectangle okBtn = { SCREEN_WIDTH / 2.0f - 50, SCREEN_HEIGHT / 2.0f + 60, 100, 40 };
             bool isHovering = CheckCollisionPointRec(mouseScreenPos, okBtn);
             DrawRectangleRec(okBtn, isHovering ? LIGHTGRAY : GRAY);
             DrawRectangleLinesEx(okBtn, 2, BLACK);
-            
-            // Draw button text centered
             DrawText("Okay!", (int)okBtn.x + 25, (int)okBtn.y + 10, 20, BLACK);
         }
 
-        // Standard Top-Left UI 
-        DrawRectangle(10, 10, 310, 30, Fade(BLACK, 0.7f));
+        // Top-Left UI 
+        DrawRectangle(10, 10, 310, 50, Fade(BLACK, 0.7f));
         DrawText("Click an NPC to talk to them!", 20, 15, 18, RAYWHITE);
+        
+        // Inventory UI
+        if (player.heldItem) {
+            DrawText(TextFormat("Holding: %s", player.heldItem), 20, 35, 16, GOLD);
+        } else {
+            DrawText("Holding: Nothing", 20, 35, 16, LIGHTGRAY);
+        }
 
         EndDrawing();
+
+	if (isWaitingForAI && interactingNPC != NULL) {
+            // The game will freeze on this line while Python runs
+            GenerateGeminiDialog(interactingNPC->name, interactingNPC->questItem, activeDialogText, sizeof(activeDialogText));
+            
+            // Format the new text to fit the box
+            WrapText(activeDialogText, 560, 20); 
+            
+            // Reset our loading flags
+            isWaitingForAI = false;
+            interactingNPC = NULL;
+        }
     }
 
-    // Unload assets
     UnloadNPC(&sheriff);
     UnloadNPC(&garry);
     UnloadCharacter(&player);
