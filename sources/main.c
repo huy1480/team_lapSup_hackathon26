@@ -22,9 +22,13 @@
     #define PYTHON_CMD "python3"
 #endif
 
-#define SCREEN_WIDTH (1024)
+#define SCREEN_WIDTH  (1024)
 #define SCREEN_HEIGHT (576)
-#define WINDOW_TITLE "Lego Western Town - AI NPCs!"
+#define WINDOW_TITLE  "Lego Western Town - AI NPCs!"
+
+// Full dimensions of bg.png / collision.png – used for map-wide random spawning.
+#define MAP_WIDTH  (4096)
+#define MAP_HEIGHT (2288)
 
 // --- Global UI State ---
 bool isDialogOpen = false;
@@ -44,6 +48,71 @@ bool IsBlockedByCollisionMask(Vector2 worldPos, const Color *maskPixels, int mas
     Color pixel = maskPixels[y * maskWidth + x];
     return (pixel.a > 0 && pixel.r < 20 && pixel.g < 20 && pixel.b < 20);
 }
+
+// Returns true only if the candidate point AND 8 compass/diagonal samples at `margin`
+// pixels distance are all unblocked – guaranteeing the spawn is at least ~margin px
+// from any wall.
+static bool HasClearance(Vector2 pos, int margin,
+                         const Color *maskPixels, int maskWidth, int maskHeight)
+{
+    // Centre point itself
+    if (IsBlockedByCollisionMask(pos, maskPixels, maskWidth, maskHeight)) return false;
+
+    // 8 directions at the requested distance
+    static const int dx[8] = {  0,  1,  1,  1,  0, -1, -1, -1 };
+    static const int dy[8] = { -1, -1,  0,  1,  1,  1,  0, -1 };
+    for (int i = 0; i < 8; i++) {
+        Vector2 probe = { pos.x + dx[i] * margin, pos.y + dy[i] * margin };
+        if (IsBlockedByCollisionMask(probe, maskPixels, maskWidth, maskHeight)) return false;
+    }
+    return true;
+}
+
+// Returns a random position inside [xMin,xMax] x [yMin,yMax] that is at least
+// SPAWN_CLEARANCE pixels away from any blocked pixel. Tries up to 2000 times then
+// falls back to a deterministic scan to guarantee a result.
+#define SPAWN_CLEARANCE 30
+
+Vector2 FindValidSpawnPosition(int xMin, int xMax, int yMin, int yMax,
+                               const Color *maskPixels, int maskWidth, int maskHeight)
+{
+    if (maskPixels == NULL) {
+        return (Vector2){ (float)((xMin + xMax) / 2), (float)((yMin + yMax) / 2) };
+    }
+
+    for (int attempt = 0; attempt < 2000; attempt++) {
+        Vector2 candidate = {
+            (float)(xMin + rand() % (xMax - xMin + 1)),
+            (float)(yMin + rand() % (yMax - yMin + 1))
+        };
+        if (HasClearance(candidate, SPAWN_CLEARANCE, maskPixels, maskWidth, maskHeight)) {
+            return candidate;
+        }
+    }
+
+    // Random attempts failed – deterministic scan, step by 10 px for speed.
+    printf("WARNING: FindValidSpawnPosition random phase failed in [%d-%d, %d-%d], scanning...\n",
+           xMin, xMax, yMin, yMax);
+    for (int y = yMin; y <= yMax; y += 10) {
+        for (int x = xMin; x <= xMax; x += 10) {
+            Vector2 candidate = { (float)x, (float)y };
+            if (HasClearance(candidate, SPAWN_CLEARANCE, maskPixels, maskWidth, maskHeight)) {
+                return candidate;
+            }
+        }
+    }
+
+    // Entire rectangle has no clear spot – return centre as last resort.
+    printf("WARNING: No clear spawn found in [%d-%d, %d-%d]!\n", xMin, xMax, yMin, yMax);
+    return (Vector2){ (float)((xMin + xMax) / 2), (float)((yMin + yMax) / 2) };
+}
+
+// Spawn anywhere on the map that passes the clearance check.
+// The collision mask is the only constraint – no hardcoded centre points.
+// Requires collisionMaskPixels/collisionMaskImage to be in scope (used inside main).
+#define SPAWN_MAP() \
+    FindValidSpawnPosition(0, MAP_WIDTH - 1, 0, MAP_HEIGHT - 1, \
+                           collisionMaskPixels, collisionMaskImage.width, collisionMaskImage.height)
 
 // --- Python Hook Function ---
 void GenerateGeminiDialog(const char* npcName, const char* itemName, char* buffer, size_t bufferSize) {
@@ -135,6 +204,16 @@ void InteractWithNPC(NPC* npc, Character* player) {
     isDialogOpen = true;
 }
 
+// Collision mask data for one scene (pixels + dimensions).
+typedef struct { Color *pixels; int width, height; } MaskData;
+
+// Returns a random valid spawn position inside the given scene's coordinate space.
+static Vector2 SpawnInScene(SceneType scene, MaskData masks[4]) {
+    MaskData *m = &masks[scene];
+    return FindValidSpawnPosition(0, m->width - 1, 0, m->height - 1,
+                                  m->pixels, m->width, m->height);
+}
+
 int main(void)
 {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
@@ -151,57 +230,90 @@ int main(void)
 
     if (collisionMaskImage.data != NULL) {
         collisionMaskPixels = LoadImageColors(collisionMaskImage);
+        printf("INFO: Collision mask loaded: %dx%d\n", collisionMaskImage.width, collisionMaskImage.height);
     } else {
         printf("WARNING: Could not load assets/collision.png. Movement will ignore collision mask.\n");
     }
 
+    // Load sub-scene collision masks
+    Image barMaskImg     = LoadImage("assets/Scenes/the_bar_mask.png");
+    Image stablesMaskImg = LoadImage("assets/Scenes/stables_mask.png");
+    Image rangeMaskImg   = LoadImage("assets/Scenes/practice_rage_mask.png");
+
+    // Pack all four masks into one array indexed by SceneType
+    MaskData sceneMasks[4] = {
+        [SCENE_MAIN_TOWN]      = { collisionMaskPixels,
+                                   collisionMaskImage.width, collisionMaskImage.height },
+        [SCENE_SALOON]         = { barMaskImg.data     ? LoadImageColors(barMaskImg)     : NULL,
+                                   barMaskImg.width,     barMaskImg.height },
+        [SCENE_STABLES]        = { stablesMaskImg.data ? LoadImageColors(stablesMaskImg) : NULL,
+                                   stablesMaskImg.width, stablesMaskImg.height },
+        [SCENE_SHOOTING_RANGE] = { rangeMaskImg.data   ? LoadImageColors(rangeMaskImg)   : NULL,
+                                   rangeMaskImg.width,   rangeMaskImg.height },
+    };
+
+    // Player always starts in the main town on a valid open pixel
+    Vector2 playerStart = SpawnInScene(SCENE_MAIN_TOWN, sceneMasks);
     Character player;
-    InitCharacter(&player, (Vector2){ 2500.0f, 1400.0f }, "assets/character.png");
+    InitCharacter(&player, playerStart, "assets/character.png");
 
     // --- NPC Initialization ---
     NPC sheriff, garry, dale, susan, kitty, buster, tommy, barry, marley;
 
-    InitNPC(&sheriff, (Vector2){ 2480.0f, 1420.0f }, "Sheriff Burbrick", "assets/sheriff.png");
+    // NPCs are randomly scattered across ALL scenes. Each gets a random SceneType,
+    // then FindValidSpawnPosition picks a clear pixel inside that scene's mask.
+    #define INIT_NPC_RANDOM(npcPtr, nameStr, texPath) do {                        \
+        (npcPtr)->scene = (SceneType)(rand() % 4);                                \
+        InitNPC((npcPtr), SpawnInScene((npcPtr)->scene, sceneMasks), nameStr, texPath); \
+    } while (0)
+
+    INIT_NPC_RANDOM(&sheriff, "Sheriff Burbrick",   "assets/sheriff.png");
     sheriff.questItem = "Lost Badge";
 
-    InitNPC(&garry, (Vector2){ 2620.0f, 1500.0f }, "Gunslinger Gary", "assets/gary.png");
+    INIT_NPC_RANDOM(&garry,  "Gunslinger Gary",     "assets/gary.png");
     garry.questItem = "Lucky Horseshoe";
 
-    InitNPC(&dale, (Vector2){ 2310.0f, 1320.0f }, "Dynamite Dale", "assets/dale.png");
+    INIT_NPC_RANDOM(&dale,   "Dynamite Dale",       "assets/dale.png");
     dale.questItem = "TNT Plunger";
 
-    InitNPC(&susan, (Vector2){ 2860.0f, 1220.0f }, "Stable Susan", "assets/susan.png");
+    INIT_NPC_RANDOM(&susan,  "Stable Susan",        "assets/susan.png");
     susan.questItem = "Golden Saddle";
 
-    InitNPC(&kitty, (Vector2){ 2520.0f, 1560.0f }, "Kitty", "assets/kitty.png");
+    INIT_NPC_RANDOM(&kitty,  "Kitty",               "assets/kitty.png");
     kitty.questItem = "Feather Boa";
 
-    InitNPC(&buster, (Vector2){ 3430.0f, 1480.0f }, "Buster the Bandit", "assets/buster.png");
+    INIT_NPC_RANDOM(&buster, "Buster the Bandit",   "assets/buster.png");
     buster.questItem = "Stolen Loot";
 
-    InitNPC(&tommy, (Vector2){ 2380.0f, 1710.0f }, "Tommy Treasurer", "assets/tommy.png");
+    INIT_NPC_RANDOM(&tommy,  "Tommy Treasurer",     "assets/tommy.png");
     tommy.questItem = "Ledger";
 
-    InitNPC(&barry, (Vector2){ 2450.0f, 1780.0f }, "Barry the Barkeep", "assets/barry.png");
+    INIT_NPC_RANDOM(&barry,  "Barry the Barkeep",   "assets/barry.png");
     barry.questItem = "Special Whiskey";
 
-    InitNPC(&marley, (Vector2){ 2400.0f, 1860.0f }, "Marley the Musician", "assets/marley.png");
+    INIT_NPC_RANDOM(&marley, "Marley the Musician",  "assets/marley.png");
     marley.questItem = "Tuning Fork";
 
     // --- Initialize Items (9 total, one per NPC) ---
+    // Each item is randomly assigned to a scene and spawned on a valid open pixel in it.
+    #define INIT_ITEM(idx, itemName) do {                                         \
+        SceneType _sc = (SceneType)(rand() % 4);                                  \
+        items[idx] = (Item){ SpawnInScene(_sc, sceneMasks), itemName, true, _sc };\
+    } while (0)
+
     Item items[9];
-    items[0] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Lost Badge",      true };
-    items[1] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Lucky Horseshoe", true };
-    items[2] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "TNT Plunger",     true };
-    items[3] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Golden Saddle",   true };
-    items[4] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Feather Boa",     true };
-    items[5] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Stolen Loot",     true };
-    items[6] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Ledger",          true };
-    items[7] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Special Whiskey", true };
-    items[8] = (Item){ (Vector2){ (float)(rand() % 1200 + 2200), (float)(rand() % 900 + 1000) }, "Tuning Fork",     true };
+    INIT_ITEM(0, "Lost Badge");
+    INIT_ITEM(1, "Lucky Horseshoe");
+    INIT_ITEM(2, "TNT Plunger");
+    INIT_ITEM(3, "Golden Saddle");
+    INIT_ITEM(4, "Feather Boa");
+    INIT_ITEM(5, "Stolen Loot");
+    INIT_ITEM(6, "Ledger");
+    INIT_ITEM(7, "Special Whiskey");
+    INIT_ITEM(8, "Tuning Fork");
 
     Camera2D camera = { 0 };
-    camera.zoom = 2.0f; 
+    camera.zoom = 0.5f; 
     camera.offset = (Vector2){ SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
 
     while (!WindowShouldClose())
@@ -218,17 +330,15 @@ int main(void)
                     isDialogOpen = false;
                 }
             } else {
-                // Check which NPC was clicked (all 9)
+                // Only interact with NPCs present in the current scene
                 NPC* clickedNPC = NULL;
-                if      (IsNPCClicked(&sheriff, mouseWorldPos)) clickedNPC = &sheriff;
-                else if (IsNPCClicked(&garry,   mouseWorldPos)) clickedNPC = &garry;
-                else if (IsNPCClicked(&dale,    mouseWorldPos)) clickedNPC = &dale;
-                else if (IsNPCClicked(&susan,   mouseWorldPos)) clickedNPC = &susan;
-                else if (IsNPCClicked(&kitty,   mouseWorldPos)) clickedNPC = &kitty;
-                else if (IsNPCClicked(&buster,  mouseWorldPos)) clickedNPC = &buster;
-                else if (IsNPCClicked(&tommy,   mouseWorldPos)) clickedNPC = &tommy;
-                else if (IsNPCClicked(&barry,   mouseWorldPos)) clickedNPC = &barry;
-                else if (IsNPCClicked(&marley,  mouseWorldPos)) clickedNPC = &marley;
+                NPC *allNPCs[9] = { &sheriff, &garry, &dale, &susan, &kitty,
+                                    &buster,  &tommy, &barry, &marley };
+                for (int i = 0; i < 9 && clickedNPC == NULL; i++) {
+                    if (allNPCs[i]->scene == currentScene &&
+                        IsNPCClicked(allNPCs[i], mouseWorldPos))
+                        clickedNPC = allNPCs[i];
+                }
 
                 if (clickedNPC != NULL) {
                     activeNPCName = clickedNPC->name;
@@ -249,13 +359,11 @@ int main(void)
                         interactingNPC = clickedNPC;
                     }
                 } else {
-                    // Move player – collision only applies in the main town
-                    bool canMove = true;
-                    if (collisionMaskPixels != NULL && currentScene == SCENE_MAIN_TOWN) {
-                        canMove = !IsBlockedByCollisionMask(mouseWorldPos, collisionMaskPixels,
-                                                            collisionMaskImage.width,
-                                                            collisionMaskImage.height);
-                    }
+                    // Move player – use the collision mask for whatever scene we're in
+                    MaskData *curMask = &sceneMasks[currentScene];
+                    bool canMove = (curMask->pixels == NULL) ||
+                        !IsBlockedByCollisionMask(mouseWorldPos, curMask->pixels,
+                                                  curMask->width, curMask->height);
                     if (canMove) {
                         player.targetPosition = mouseWorldPos;
                     }
@@ -270,13 +378,12 @@ int main(void)
             // Check for a scene transition every frame
             CheckForSceneSwitch(player.position, &player);
 
-            // Item pickup only makes sense in the main town
-            if (currentScene == SCENE_MAIN_TOWN) {
-                for (int i = 0; i < 9; i++) {
-                    if (items[i].active && Vector2Distance(player.position, items[i].position) < 20.0f) {
-                        items[i].active = false;
-                        player.heldItem = items[i].name;
-                    }
+            // Item pickup works in any scene – filter by current scene
+            for (int i = 0; i < 9; i++) {
+                if (items[i].scene == currentScene && items[i].active &&
+                    Vector2Distance(player.position, items[i].position) < 20.0f) {
+                    items[i].active = false;
+                    player.heldItem = items[i].name;
                 }
             }
         }
@@ -294,27 +401,19 @@ int main(void)
             DrawTextureEx(currentBackground, (Vector2){0,0}, 0.0f, 1.0f, WHITE);
         }
 
-        // NPCs, items, and entrance markers are only in the main town
-        if (currentScene == SCENE_MAIN_TOWN) {
-            // Draw active items (yellow squares)
-            for (int i = 0; i < 9; i++) {
-                if (items[i].active) {
-                    DrawRectangle(items[i].position.x - 5, items[i].position.y - 5, 10, 10, GOLD);
-                    DrawText(items[i].name, items[i].position.x - 10, items[i].position.y - 15, 10, RAYWHITE);
-                }
+        // Draw items and NPCs that belong to the current scene
+        NPC *allNPCsDraw[9] = { &sheriff, &garry, &dale, &susan, &kitty,
+                                &buster,  &tommy, &barry, &marley };
+        for (int i = 0; i < 9; i++) {
+            if (items[i].active && items[i].scene == currentScene) {
+                DrawRectangle((int)items[i].position.x - 5, (int)items[i].position.y - 5, 10, 10, GOLD);
+                DrawText(items[i].name, (int)items[i].position.x - 10, (int)items[i].position.y - 15, 10, RAYWHITE);
             }
+            if (allNPCsDraw[i]->scene == currentScene) DrawNPC(allNPCsDraw[i]);
+        }
 
-            DrawNPC(&sheriff);
-            DrawNPC(&garry);
-            DrawNPC(&dale);
-            DrawNPC(&susan);
-            DrawNPC(&kitty);
-            DrawNPC(&buster);
-            DrawNPC(&tommy);
-            DrawNPC(&barry);
-            DrawNPC(&marley);
-
-            // Teleport zone markers – walk into these to switch scene
+        // Teleport zone markers (main town) or exit marker (sub-scenes)
+        if (currentScene == SCENE_MAIN_TOWN) {
             DrawRectangleLinesEx((Rectangle){ 2383, 1812, 80, 60 }, 2, RED);
             DrawText("[Saloon]",  2386, 1820, 10, RED);
             DrawRectangleLinesEx((Rectangle){ 2903, 1208, 80, 60 }, 2, BLUE);
@@ -322,11 +421,10 @@ int main(void)
             DrawRectangleLinesEx((Rectangle){ 3499, 1502, 80, 60 }, 2, GREEN);
             DrawText("[Range]",   3502, 1510, 10, GREEN);
         } else {
-            // Exit zone marker – position differs per sub-scene
             Rectangle exitRect = { 0 };
-            if (currentScene == SCENE_SALOON)         exitRect = (Rectangle){  71, 523, 80, 60 };
-            else if (currentScene == SCENE_STABLES)   exitRect = (Rectangle){ 194, 647, 80, 60 };
-            else if (currentScene == SCENE_SHOOTING_RANGE) exitRect = (Rectangle){ 65, 554, 80, 60 };
+            if      (currentScene == SCENE_SALOON)         exitRect = (Rectangle){  71, 523, 80, 60 };
+            else if (currentScene == SCENE_STABLES)        exitRect = (Rectangle){ 194, 647, 80, 60 };
+            else if (currentScene == SCENE_SHOOTING_RANGE) exitRect = (Rectangle){  65, 554, 80, 60 };
             DrawRectangleLinesEx(exitRect, 2, ORANGE);
             DrawText("[Exit]", (int)exitRect.x + 5, (int)exitRect.y + 22, 10, ORANGE);
         }
@@ -357,21 +455,17 @@ int main(void)
             DrawText("Okay!", (int)okBtn.x + 25, (int)okBtn.y + 10, 20, BLACK);
         }
 
-        // Top-Left UI – context-aware
-        DrawRectangle(10, 10, 350, 50, Fade(BLACK, 0.7f));
-        if (currentScene == SCENE_MAIN_TOWN) {
-            DrawText("Click an NPC to talk to them!", 20, 15, 18, RAYWHITE);
-            if (player.heldItem) {
-                DrawText(TextFormat("Holding: %s", player.heldItem), 20, 35, 16, GOLD);
-            } else {
-                DrawText("Holding: Nothing", 20, 35, 16, LIGHTGRAY);
-            }
+        // Top-Left UI – scene name + held item, visible everywhere since NPCs/items span all scenes
+        const char *uiSceneName = (currentScene == SCENE_MAIN_TOWN)      ? "Main Town"      :
+                                  (currentScene == SCENE_SALOON)         ? "The Saloon"     :
+                                  (currentScene == SCENE_STABLES)        ? "Stables"        :
+                                  (currentScene == SCENE_SHOOTING_RANGE) ? "Practice Range" : "?";
+        DrawRectangle(10, 10, 350, 55, Fade(BLACK, 0.7f));
+        DrawText(TextFormat("Location: %s  |  Click NPC to talk", uiSceneName), 20, 15, 13, RAYWHITE);
+        if (player.heldItem) {
+            DrawText(TextFormat("Holding: %s", player.heldItem), 20, 36, 16, GOLD);
         } else {
-            const char *sceneName = (currentScene == SCENE_SALOON)         ? "The Saloon" :
-                                    (currentScene == SCENE_STABLES)        ? "Stables"    :
-                                    (currentScene == SCENE_SHOOTING_RANGE) ? "Practice Range" : "?";
-            DrawText(TextFormat("Location: %s", sceneName), 20, 15, 18, YELLOW);
-            DrawText("Walk to the orange [Exit] to leave", 20, 35, 14, LIGHTGRAY);
+            DrawText("Holding: Nothing", 20, 36, 16, LIGHTGRAY);
         }
 
         // Mouse world-coordinate tracker (bottom-right corner)
@@ -410,6 +504,16 @@ int main(void)
     }
     UnloadMusicStream(bgMusic);
     CloseAudioDevice();
+    // Free main-town mask
+    if (collisionMaskPixels != NULL) UnloadImageColors(collisionMaskPixels);
+    if (collisionMaskImage.data != NULL) UnloadImage(collisionMaskImage);
+    // Free sub-scene masks
+    if (sceneMasks[SCENE_SALOON].pixels)         UnloadImageColors(sceneMasks[SCENE_SALOON].pixels);
+    if (sceneMasks[SCENE_STABLES].pixels)        UnloadImageColors(sceneMasks[SCENE_STABLES].pixels);
+    if (sceneMasks[SCENE_SHOOTING_RANGE].pixels) UnloadImageColors(sceneMasks[SCENE_SHOOTING_RANGE].pixels);
+    if (barMaskImg.data)     UnloadImage(barMaskImg);
+    if (stablesMaskImg.data) UnloadImage(stablesMaskImg);
+    if (rangeMaskImg.data)   UnloadImage(rangeMaskImg);
     CloseWindow();
 
     return 0;
